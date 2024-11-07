@@ -1,0 +1,36 @@
+# Python bytecode files
+*.pyc
+*.pyo
+__pycache__/
+
+# PyCharm specific files
+.idea/
+
+# Virtual environment directory
+.venv/
+venv/
+env/
+.env
+
+# Python distribution
+*.egg
+*.egg-info/
+dist/
+build/
+
+# Test and coverage
+.coverage
+*.tox
+*.nox
+*.coverage.*
+nosetests.xml
+coverage.xml
+*.hypothesis/
+
+# Logs and temporary files
+*.log
+*.tmp
+
+# Editor backup files
+*~
+*.swp
