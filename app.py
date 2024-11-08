@@ -10,6 +10,13 @@ from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 import base64
 from datetime import datetime
+import io
+import matplotlib.pyplot as plt
+from flask import Flask, request, send_file
+from sqlalchemy import extract
+from models import Sale  # Import your Sale model
+import pandas as pd
+
 
 app = Flask(__name__)
 app.config.from_object(Config)
@@ -386,6 +393,227 @@ def item_sales_report_monthly():
 
     # Return the PNG image as a response
     return send_file(buf, mimetype='image/png')
+
+@app.route('/api/sales/item-report/yearly', methods=['GET'])
+def item_sales_report_yearly():
+    # Query the database to get sales data by item and year
+    sales = db.session.query(
+        extract('year', Sale.sale_date).label('year'),
+        Item.item_name,
+        db.func.sum(Sale.quantity_sold).label('total_quantity')
+    ).join(Sale, Sale.item_id == Item.item_id) \
+        .group_by(extract('year', Sale.sale_date), Item.item_name) \
+        .order_by(extract('year', Sale.sale_date)).all()
+
+    # Prepare data for the chart
+    years = list(set(sale.year for sale in sales))
+    items = list(set(sale.item_name for sale in sales))
+
+    # Create a dictionary to hold yearly sales for each item
+    item_yearly_sales = {item: [0] * len(years) for item in items}
+
+    # Populate the dictionary with sales data
+    for sale in sales:
+        year_index = years.index(sale.year)
+        item_yearly_sales[sale.item_name][year_index] = sale.total_quantity
+
+    # Create the chart
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    # Plot data for each item
+    for item, quantities in item_yearly_sales.items():
+        ax.plot(years, quantities, label=item)
+
+    # Set chart labels and title
+    ax.set_xlabel('Year')
+    ax.set_ylabel('Total Quantity Sold')
+    ax.set_title("Yearly Sales Report")
+    ax.legend(title='Items')
+
+    # Save the figure to a PNG buffer
+    buf = io.BytesIO()
+    plt.savefig(buf, format="png")
+    buf.seek(0)
+
+    # Return the PNG image as a response
+    return send_file(buf, mimetype='image/png')
+
+
+@app.route('/api/sales/item-report/quarterly', methods=['GET'])
+def item_sales_report_quarterly():
+    # Query the database to get sales data by item and quarter
+    sales = db.session.query(
+        extract('quarter', Sale.sale_date).label('quarter'),
+        Item.item_name,
+        db.func.sum(Sale.quantity_sold).label('total_quantity')
+    ).join(Sale, Sale.item_id == Item.item_id) \
+        .group_by(extract('quarter', Sale.sale_date), Item.item_name) \
+        .order_by(extract('quarter', Sale.sale_date)).all()
+
+    # Prepare data for the chart
+    quarters = [1, 2, 3, 4]
+    items = list(set(sale.item_name for sale in sales))
+
+    # Create a dictionary to hold quarterly sales for each item
+    item_quarterly_sales = {item: [0] * 4 for item in items}
+
+    # Populate the dictionary with sales data
+    for sale in sales:
+        quarter = int(sale.quarter) - 1  # Convert quarter to integer and adjust to 0-indexed
+        item_quarterly_sales[sale.item_name][quarter] = sale.total_quantity
+
+    # Create the chart
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    # Plot data for each item
+    for item, quantities in item_quarterly_sales.items():
+        ax.plot(quarters, quantities, label=item)
+
+    # Set chart labels and title
+    ax.set_xlabel('Quarter')
+    ax.set_ylabel('Total Quantity Sold')
+    ax.set_title("Quarterly Sales Report")
+    ax.legend(title='Items')
+
+    # Save the figure to a PNG buffer
+    buf = io.BytesIO()
+    plt.savefig(buf, format="png")
+    buf.seek(0)
+
+    # Return the PNG image as a response
+    return send_file(buf, mimetype='image/png')
+
+@app.route('/api/sales/item-report/year/<int:year>', methods=['GET'])
+def item_sales_report_specific_year(year):
+    # Query the database to get sales data for a specific year
+    sales = db.session.query(
+        extract('year', Sale.sale_date).label('year'),
+        Item.item_name,
+        db.func.sum(Sale.quantity_sold).label('total_quantity')
+    ).join(Sale, Sale.item_id == Item.item_id) \
+        .filter(extract('year', Sale.sale_date) == year) \
+        .group_by(extract('year', Sale.sale_date), Item.item_name) \
+        .order_by(extract('year', Sale.sale_date)).all()
+
+    # Prepare data for the chart
+    items = list(set(sale.item_name for sale in sales))
+
+    # Create a dictionary to hold sales for each item in the specific year
+    item_year_sales = {item: [0] for item in items}
+
+    # Populate the dictionary with sales data
+    for sale in sales:
+        item_year_sales[sale.item_name][0] = sale.total_quantity
+
+    # Create the chart
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    # Plot data for each item
+    for item, quantities in item_year_sales.items():
+        ax.plot([year], quantities, label=item)
+
+    # Set chart labels and title
+    ax.set_xlabel('Year')
+    ax.set_ylabel('Total Quantity Sold')
+    ax.set_title(f"Sales Report for {year}")
+    ax.legend(title='Items')
+
+    # Save the figure to a PNG buffer
+    buf = io.BytesIO()
+    plt.savefig(buf, format="png")
+    buf.seek(0)
+
+    # Return the PNG image as a response
+    return send_file(buf, mimetype='image/png')
+
+@app.route('/api/sales/item-report/month/<int:year>/<int:month>', methods=['GET'])
+def item_sales_report_specific_month(year, month):
+    # Query the database to get sales data for a specific month and year
+    sales = db.session.query(
+        extract('month', Sale.sale_date).label('month'),
+        Item.item_name,
+        db.func.sum(Sale.quantity_sold).label('total_quantity')
+    ).join(Sale, Sale.item_id == Item.item_id) \
+        .filter(extract('year', Sale.sale_date) == year) \
+        .filter(extract('month', Sale.sale_date) == month) \
+        .group_by(extract('month', Sale.sale_date), Item.item_name) \
+        .order_by(extract('month', Sale.sale_date)).all()
+
+    # Prepare data for the chart
+    items = list(set(sale.item_name for sale in sales))
+
+    # Create a dictionary to hold sales for each item in the specific month
+    item_month_sales = {item: [0] for item in items}
+
+    # Populate the dictionary with sales data
+    for sale in sales:
+        item_month_sales[sale.item_name][0] = sale.total_quantity
+
+    # Create the chart
+    fig, ax = plt.subplots(figsize=(10, 6))
+
+    # Plot data for each item
+    for item, quantities in item_month_sales.items():
+        ax.plot([month], quantities, label=item)
+
+    # Set chart labels and title
+    ax.set_xlabel('Month')
+    ax.set_ylabel('Total Quantity Sold')
+    ax.set_title(f"Sales Report for {month}/{year}")
+    ax.legend(title='Items')
+
+    # Save the figure to a PNG buffer
+    buf = io.BytesIO()
+    plt.savefig(buf, format="png")
+    buf.seek(0)
+
+    # Return the PNG image as a response
+    return send_file(buf, mimetype='image/png')
+
+
+@app.route('/sales-trend', methods=['GET'])
+def sales_trend():
+    item_id = request.args.get('item_id', type=int)
+
+    if not item_id:
+        return {"error": "Please provide a valid item_id"}, 400
+
+    # Retrieve the item name from the Item table
+    with app.app_context():
+        item = db.session.query(Item).filter_by(item_id=item_id).first()
+        if not item:
+            return {"error": f"Item with item_id {item_id} not found"}, 404
+        item_name = item.item_name
+
+        # Query and aggregate sales data by year for the specified item
+        sales_data = db.session.query(
+            extract('year', Sale.sale_date).label('year'),
+            db.func.sum(Sale.quantity_sold).label('total_quantity')
+        ).filter(Sale.item_id == item_id).group_by('year').order_by('year').all()
+
+    # If no sales data is found, return an appropriate message
+    if not sales_data:
+        return {"error": f"No sales data found for item '{item_name}'"}, 404
+
+    # Convert query result to DataFrame
+    df = pd.DataFrame(sales_data, columns=['Year', 'Total Quantity Sold'])
+
+    # Plotting the data
+    plt.figure(figsize=(10, 6))
+    plt.plot(df['Year'], df['Total Quantity Sold'], marker='o', color='b', linestyle='-')
+    plt.title(f'Sales Trend for {item_name}')
+    plt.xlabel('Year')
+    plt.ylabel('Total Quantity Sold')
+    plt.grid(True)
+
+    # Save plot to a bytes buffer
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png')
+    buf.seek(0)
+    plt.close()
+
+    return send_file(buf, mimetype='image/png')
+
 
 if __name__ == '__main__':
     app.run(debug=True)
