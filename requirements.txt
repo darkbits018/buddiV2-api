@@ -3,3 +3,4 @@ python-dotenv~=1.0.1
 matplotlib~=3.9.2
 reportlab~=4.2.5
 gunicorn
+pip install sqlalchemy
