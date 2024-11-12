@@ -17,7 +17,6 @@ from sqlalchemy import extract
 from models import Sale  # Import your Sale model
 import pandas as pd
 
-
 app = Flask(__name__)
 app.config.from_object(Config)
 
@@ -394,6 +393,7 @@ def item_sales_report_monthly():
     # Return the PNG image as a response
     return send_file(buf, mimetype='image/png')
 
+
 @app.route('/api/sales/item-report/yearly', methods=['GET'])
 def item_sales_report_yearly():
     # Query the database to get sales data by item and year
@@ -483,6 +483,7 @@ def item_sales_report_quarterly():
     # Return the PNG image as a response
     return send_file(buf, mimetype='image/png')
 
+
 @app.route('/api/sales/item-report/year/<int:year>', methods=['GET'])
 def item_sales_report_specific_year(year):
     # Query the database to get sales data for a specific year
@@ -525,6 +526,7 @@ def item_sales_report_specific_year(year):
 
     # Return the PNG image as a response
     return send_file(buf, mimetype='image/png')
+
 
 @app.route('/api/sales/item-report/month/<int:year>/<int:month>', methods=['GET'])
 def item_sales_report_specific_month(year, month):
@@ -571,42 +573,88 @@ def item_sales_report_specific_month(year, month):
     return send_file(buf, mimetype='image/png')
 
 
-@app.route('/sales-trend', methods=['GET'])
-def sales_trend():
-    item_id = request.args.get('item_id', type=int)
+@app.route('/sales_trends/<int:item_id>', methods=['GET'])
+def sales_trend(item_id):
+    # Query for the item name and its sales
+    item = Item.query.get(item_id)
+    if not item:
+        return {"error": "Item not found"}, 404
 
-    if not item_id:
-        return {"error": "Please provide a valid item_id"}, 400
+    sales_data = (
+        db.session.query(Sale.sale_date, Sale.quantity_sold)
+        .filter(Sale.item_id == item_id)
+        .order_by(Sale.sale_date)
+        .all()
+    )
 
-    # Retrieve the item name from the Item table
+    # Organize sales data by year
+    sales_by_year = {}
+    for sale in sales_data:
+        year = sale.sale_date.year
+        sales_by_year[year] = sales_by_year.get(year, 0) + sale.quantity_sold
+
+    # Generate plot
+    years = list(sales_by_year.keys())
+    quantities = list(sales_by_year.values())
+
+    fig, ax = plt.subplots()
+    ax.plot(years, quantities, marker='o', color='b')
+    ax.set_title(f'Sales Trend for {item.item_name}')
+    ax.set_xlabel('Year')
+    ax.set_ylabel('Quantity Sold')
+    ax.grid(True)
+
+    # Save the plot to a BytesIO object as PNG
+    img_buffer = io.BytesIO()
+    plt.savefig(img_buffer, format='png')
+    plt.close(fig)
+    img_buffer.seek(0)
+
+    return Response(img_buffer, mimetype='image/png')
+
+
+@app.route('/sales-trends-all', methods=['GET'])
+def sales_trends_all():
+    # Fetch all items from the Item table
     with app.app_context():
-        item = db.session.query(Item).filter_by(item_id=item_id).first()
-        if not item:
-            return {"error": f"Item with item_id {item_id} not found"}, 404
-        item_name = item.item_name
+        items = db.session.query(Item).all()
+        if not items:
+            return {"error": "No items found in the database"}, 404
 
-        # Query and aggregate sales data by year for the specified item
-        sales_data = db.session.query(
-            extract('year', Sale.sale_date).label('year'),
-            db.func.sum(Sale.quantity_sold).label('total_quantity')
-        ).filter(Sale.item_id == item_id).group_by('year').order_by('year').all()
+        # Prepare a dictionary to store all sales data for plotting
+        sales_data = {}
 
-    # If no sales data is found, return an appropriate message
-    if not sales_data:
-        return {"error": f"No sales data found for item '{item_name}'"}, 404
+        for item in items:
+            item_id = item.item_id
+            item_name = item.item_name
 
-    # Convert query result to DataFrame
-    df = pd.DataFrame(sales_data, columns=['Year', 'Total Quantity Sold'])
+            # Query sales data by year for each item
+            yearly_sales = db.session.query(
+                extract('year', Sale.sale_date).label('year'),
+                db.func.sum(Sale.quantity_sold).label('total_quantity')
+            ).filter(Sale.item_id == item_id).group_by('year').order_by('year').all()
 
-    # Plotting the data
-    plt.figure(figsize=(10, 6))
-    plt.plot(df['Year'], df['Total Quantity Sold'], marker='o', color='b', linestyle='-')
-    plt.title(f'Sales Trend for {item_name}')
-    plt.xlabel('Year')
-    plt.ylabel('Total Quantity Sold')
-    plt.grid(True)
+            # If there's no sales data for an item, skip it
+            if not yearly_sales:
+                continue
 
-    # Save plot to a bytes buffer
+            # Convert query results to a DataFrame for plotting
+            df = pd.DataFrame(yearly_sales, columns=['Year', 'Total Quantity Sold'])
+            sales_data[item_name] = df  # Store each item's sales data by name for the plots
+
+    # Plotting each item's sales trend in a grid
+    fig, axs = plt.subplots(len(sales_data), 1, figsize=(10, 6 * len(sales_data)), squeeze=False)
+    fig.subplots_adjust(hspace=0.4)
+
+    for idx, (item_name, df) in enumerate(sales_data.items()):
+        ax = axs[idx, 0]
+        ax.plot(df['Year'], df['Total Quantity Sold'], marker='o', color='b', linestyle='-')
+        ax.set_title(f'Sales Trend for {item_name}')
+        ax.set_xlabel('Year')
+        ax.set_ylabel('Total Quantity Sold')
+        ax.grid(True)
+
+    # Save the plot as a single image to a bytes buffer
     buf = io.BytesIO()
     plt.savefig(buf, format='png')
     buf.seek(0)

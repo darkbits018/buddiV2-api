@@ -4,3 +4,4 @@ matplotlib~=3.9.2
 reportlab~=4.2.5
 gunicorn
 sqlalchemy
+flask_sqlalchemy
