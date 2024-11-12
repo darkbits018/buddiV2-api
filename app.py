@@ -76,6 +76,46 @@ def add_item():
     return jsonify({"message": "Item added successfully", "item_id": item.item_id}), 201
 
 
+@app.route('/items/<int:item_id>', methods=['GET'])
+def get_item(item_id):
+    # Fetch item details from the database using item_id
+    item = Item.query.filter_by(item_id=item_id).first()
+
+    if item is None:
+        return jsonify({"message": "Item not found."}), 404
+
+    item_data = {
+        "item_name": item.item_name,
+        "description": item.description,
+        "quantity": item.quantity,
+        "price": item.price,
+        "farmer_id": item.farmer_id
+    }
+
+    return jsonify(item_data)
+
+
+@app.route('/items/farmer/<int:farmer_id>', methods=['GET'])
+def get_items_by_farmer(farmer_id):
+    # Fetch all items for a specific farmer
+    items = Item.query.filter_by(farmer_id=farmer_id).all()
+
+    if not items:
+        return jsonify({"message": "No items found for this farmer."}), 404
+
+    items_data = []
+    for item in items:
+        items_data.append({
+            "item_name": item.item_name,
+            "description": item.description,
+            "quantity": item.quantity,
+            "price": item.price,
+            "item_id": item.item_id
+        })
+
+    return jsonify(items_data)
+
+
 @app.route('/sales', methods=['POST'])
 def record_sale():
     data = request.get_json()
@@ -84,6 +124,48 @@ def record_sale():
     db.session.add(sale)
     db.session.commit()
     return jsonify({"message": "Sale recorded successfully", "sale_id": sale.sale_id}), 201
+
+
+@app.route('/sales/<int:sale_id>', methods=['GET'])
+def get_sale(sale_id):
+    # Fetch sale details from the database using sale_id
+    sale = Sale.query.filter_by(sale_id=sale_id).first()
+
+    if sale is None:
+        return jsonify({"message": "Sale not found."}), 404
+
+    sale_data = {
+        "sale_id": sale.sale_id,
+        "item_id": sale.item_id,
+        "buyer_id": sale.buyer_id,
+        "quantity_sold": sale.quantity_sold,
+        "sale_price": sale.sale_price,
+        "total_sale_amount": sale.quantity_sold * sale.sale_price
+    }
+
+    return jsonify(sale_data)
+
+
+@app.route('/sales/farmer/<int:farmer_id>', methods=['GET'])
+def get_sales_by_farmer(farmer_id):
+    # Fetch all sales for a specific farmer (based on the farmer's items)
+    sales = db.session.query(Sale).join(Item).filter(Item.farmer_id == farmer_id).all()
+
+    if not sales:
+        return jsonify({"message": "No sales found for this farmer."}), 404
+
+    sales_data = []
+    for sale in sales:
+        sales_data.append({
+            "sale_id": sale.sale_id,
+            "item_id": sale.item_id,
+            "buyer_id": sale.buyer_id,
+            "quantity_sold": sale.quantity_sold,
+            "sale_price": sale.sale_price,
+            "total_sale_amount": sale.quantity_sold * sale.sale_price
+        })
+
+    return jsonify(sales_data)
 
 
 @app.route('/appointments', methods=['POST'])
