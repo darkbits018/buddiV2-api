@@ -1,8 +1,9 @@
 import matplotlib
+import os
 
 matplotlib.use('Agg')  # Set the non-interactive backend
 
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, jsonify, send_file, json
 from sqlalchemy import func, extract
 from config import Config
 from models import db, Farmer, Item, Sale, Appointment, Buyer
@@ -16,24 +17,138 @@ from flask import Flask, request, send_file
 from sqlalchemy import extract
 from models import Sale  # Import your Sale model
 import pandas as pd
+import boto3
+from botocore.exceptions import NoCredentialsError, PartialCredentialsError, ClientError
+from flask_cors import CORS  # Import CORS
+import uuid
+import matplotlib
+
+matplotlib.use('Agg')
 
 app = Flask(__name__)
 app.config.from_object(Config)
 
 db.init_app(app)
+CORS(app)
+
+# Initialize S3 client with credentials from .env file
+s3_client = boto3.client(
+    's3',
+    region_name=os.getenv('AWS_REGION'),
+    aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
+    aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY')
+)
+
+S3_BUCKET_NAME = os.getenv('S3_BUCKET_NAME')
+
+
+# def generate_invoice(sale_id):
+#     # Query sale details
+#     sale = Sale.query.get(sale_id)
+#     if not sale:
+#         return None
+#
+#     item = Item.query.get(sale.item_id)
+#     buyer = Buyer.query.get(sale.buyer_id)
+#     farmer = Farmer.query.get(item.farmer_id)
+#
+#     # Create a PDF buffer
+#     buffer = io.BytesIO()
+#     pdf = canvas.Canvas(buffer, pagesize=A4)
+#     pdf.setTitle(f"Invoice_{sale_id}")
+#
+#     # Add content to PDF
+#     pdf.drawString(100, 800, "Invoice")
+#     pdf.drawString(100, 780, f"Invoice ID: {sale_id}")
+#     pdf.drawString(100, 760, f"Buyer: {buyer.name}")
+#     pdf.drawString(100, 740, f"Farmer: {farmer.name}")
+#     pdf.drawString(100, 720, f"Item: {item.item_name}")
+#     pdf.drawString(100, 700, f"Quantity: {sale.quantity_sold}")
+#     pdf.drawString(100, 680, f"Price per Unit: {item.price}")
+#     pdf.drawString(100, 660, f"Total Amount: {sale.sale_price * sale.quantity_sold}")
+#     pdf.drawString(100, 640, f"Date: {sale.sale_date}")
+#
+#     pdf.showPage()
+#     pdf.save()
+#
+#     # Move buffer to the beginning so we can return it
+#     buffer.seek(0)
+#     return buffer
+def upload_image_to_s3(img_buffer, prefix='sales-reports/'):
+    """
+    Upload an image buffer to S3 and return the public URL.
+
+    :param img_buffer: BytesIO buffer containing the image
+    :param prefix: S3 key prefix for the file
+    :return: S3 URL of the uploaded image
+    """
+    try:
+        # Generate a unique filename
+        unique_filename = f"{prefix}{uuid.uuid4()}.png"
+
+        # Upload the image to S3
+        s3_client.upload_fileobj(
+            img_buffer,
+            S3_BUCKET_NAME,
+            unique_filename,
+            ExtraArgs={
+                'ContentType': 'image/png',
+                # 'ACL': 'public-read'  # Make the file publicly readable
+            }
+        )
+
+        # Construct and return the S3 URL
+        s3_url = f"https://{S3_BUCKET_NAME}.s3.amazonaws.com/{unique_filename}"
+        return s3_url
+
+    except ClientError as e:
+        app.logger.error(f"Error uploading to S3: {e}")
+        return None
+
+
+def upload_invoice_to_s3(pdf_buffer, prefix='invoice/'):
+    """
+    Upload a PDF buffer to S3 and return the public URL.
+
+    :param pdf_buffer: BytesIO buffer containing the PDF
+    :param prefix: S3 key prefix for the file
+    :return: S3 URL of the uploaded PDF
+    """
+    try:
+        # Generate a unique filename
+        unique_filename = f"{prefix}{uuid.uuid4()}.pdf"
+
+        # Upload the PDF to S3
+        s3_client.upload_fileobj(
+            pdf_buffer,
+            S3_BUCKET_NAME,
+            unique_filename,
+            ExtraArgs={
+                'ContentType': 'application/pdf',
+            }
+        )
+
+        # Construct and return the S3 URL
+        s3_url = f"https://{S3_BUCKET_NAME}.s3.amazonaws.com/{unique_filename}"
+        return s3_url
+
+    except ClientError as e:
+        app.logger.error(f"Error uploading to S3: {e}")
+        return None
+
 
 
 def generate_invoice(sale_id):
-    # Query sale details
-    sale = Sale.query.get(sale_id)
+    # Query sale details using session.get()
+    sale = db.session.get(Sale, sale_id)
     if not sale:
         return None
 
-    item = Item.query.get(sale.item_id)
-    buyer = Buyer.query.get(sale.buyer_id)
-    farmer = Farmer.query.get(item.farmer_id)
+    item = db.session.get(Item, sale.item_id)
+    buyer = db.session.get(Buyer, sale.buyer_id)
+    farmer = db.session.get(Farmer, item.farmer_id)
 
-    # Create a PDF buffer
+    # Create a PDF
     buffer = io.BytesIO()
     pdf = canvas.Canvas(buffer, pagesize=A4)
     pdf.setTitle(f"Invoice_{sale_id}")
@@ -52,7 +167,7 @@ def generate_invoice(sale_id):
     pdf.showPage()
     pdf.save()
 
-    # Move buffer to the beginning so we can return it
+    # Reset buffer position
     buffer.seek(0)
     return buffer
 
@@ -208,11 +323,20 @@ def create_buyer():
 
 @app.route('/invoices/<int:sale_id>', methods=['GET'])
 def download_invoice(sale_id):
+    # Generate the invoice PDF as a buffer
     buffer = generate_invoice(sale_id)
     if buffer is None:
         return jsonify({"error": "Sale not found"}), 404
 
-    return send_file(buffer, as_attachment=True, download_name=f"Invoice_{sale_id}.pdf", mimetype='application/pdf')
+    # Generate an S3 prefix for the invoice
+    s3_prefix = f"invoices/{sale_id}/"
+
+    # Upload the PDF to S3 and get the URL
+    s3_url = upload_invoice_to_s3(buffer, prefix=s3_prefix)
+    if s3_url:
+        return jsonify({"invoice_url": s3_url})
+
+    return jsonify({"error": "Failed to upload invoice to S3"}), 500
 
 
 # Utility function to generate charts
@@ -239,6 +363,103 @@ def generate_sales_chart(data, title, xlabel, ylabel):
 import matplotlib.pyplot as plt
 import io
 from flask import Response
+
+
+# @app.route('/api/sales/report/monthly-png', methods=['GET'])
+# def monthly_sales_report_png():
+#     current_year = datetime.now().year
+#
+#     # Query sales data for the current year, grouped by month
+#     sales_data = db.session.query(
+#         db.func.extract('month', Sale.sale_date).label('month'),
+#         db.func.sum(Sale.sale_price * Sale.quantity_sold).label('total_sales')
+#     ).filter(db.func.extract('year', Sale.sale_date) == current_year)  # Filter by current year
+#     sales_data = sales_data.group_by('month').all()
+#
+#     # Prepare the data for the chart
+#     months = [i for i in range(1, 13)]
+#     sales = {month: 0 for month in months}
+#     for month, total_sales in sales_data:
+#         sales[int(month)] = total_sales
+#
+#     # Create a bar chart for the monthly sales
+#     fig, ax = plt.subplots()
+#     ax.bar(sales.keys(), sales.values())
+#
+#     ax.set_xlabel('Month')
+#     ax.set_ylabel('Total Sales')
+#     ax.set_title(f'Monthly Sales Report ({current_year})')
+#     ax.set_xticks(range(1, 13))
+#     ax.set_xticklabels(['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'])
+#
+#     # Save the figure to a BytesIO buffer and send it as PNG
+#     img_io = io.BytesIO()
+#     plt.savefig(img_io, format='png')
+#     img_io.seek(0)
+#
+#     return Response(img_io, mimetype='image/png')
+#
+#
+# # API endpoint for yearly report
+#
+# @app.route('/api/sales/report/monthly-data', methods=['GET'])
+# def monthly_sales_report_json():
+#     current_year = datetime.now().year
+#
+#     # Query sales data for the current year, grouped by month
+#     sales_data = db.session.query(
+#         db.func.extract('month', Sale.sale_date).label('month'),
+#         db.func.sum(Sale.sale_price * Sale.quantity_sold).label('total_sales')
+#     ).filter(db.func.extract('year', Sale.sale_date) == current_year)  # Filter by current year
+#     sales_data = sales_data.group_by('month').all()
+#
+#     # Prepare the data for the frontend
+#     months = [i for i in range(1, 13)]
+#     sales = {month: 0 for month in months}
+#     for month, total_sales in sales_data:
+#         sales[int(month)] = total_sales
+#
+#     # Prepare the response data in JSON format
+#     response_data = {
+#         'months': ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
+#         'sales': list(sales.values())
+#     }
+#
+#     # Return the data as JSON
+#     return jsonify(response_data)
+
+
+# @app.route('/api/sales/report/monthly-bsf', methods=['GET'])
+# def monthly_sales_report_json():
+#     current_year = datetime.now().year
+#
+#     # Query sales data for the current year, grouped by month
+#     sales_data = db.session.query(
+#         db.func.extract('month', Sale.sale_date).label('month'),
+#         db.func.sum(Sale.sale_price * Sale.quantity_sold).label('total_sales')
+#     ).filter(db.func.extract('year', Sale.sale_date) == current_year)  # Filter by current year
+#     sales_data = sales_data.group_by('month').all()
+#
+#     # Prepare the data for the frontend
+#     months = [i for i in range(1, 13)]
+#     sales = {month: 0 for month in months}
+#     for month, total_sales in sales_data:
+#         sales[int(month)] = total_sales
+#
+#     # Prepare the response data in JSON format
+#     response_data = {
+#         'months': ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
+#         'sales': list(sales.values())
+#     }
+#
+#     # Convert the response data to a JSON string
+#     json_data = json.dumps(response_data)
+#
+#     # Encode the JSON string as base64
+#     base64_encoded_data = base64.b64encode(json_data.encode('utf-8')).decode('utf-8')
+#
+#     # Return the base64 encoded data as JSON
+#     return jsonify({'data': base64_encoded_data})
 
 
 @app.route('/api/sales/report/monthly', methods=['GET'])
@@ -268,50 +489,68 @@ def monthly_sales_report_png():
     ax.set_xticks(range(1, 13))
     ax.set_xticklabels(['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'])
 
-    # Save the figure to a BytesIO buffer and send it as PNG
+    # Save the figure to a BytesIO buffer
     img_io = io.BytesIO()
     plt.savefig(img_io, format='png')
     img_io.seek(0)
 
-    return Response(img_io, mimetype='image/png')
+    # Generate a unique filename for the image
+    image_filename = f'monthly_sales_report_{current_year}.png'
+
+    # Upload the image to S3
+    s3_client.upload_fileobj(img_io, S3_BUCKET_NAME, image_filename, ExtraArgs={'ContentType': 'image/png'})
+
+    # Generate the URL of the uploaded image
+    image_url = f'https://{S3_BUCKET_NAME}.s3.amazonaws.com/{image_filename}'
+
+    # Return the URL of the image
+    return {'image_url': image_url}, 200
 
 
-# API endpoint for yearly report
 @app.route('/api/sales/report/yearly', methods=['GET'])
-def yearly_sales_report_png():
-    current_year = datetime.now().year
-
-    # Query sales data for the current year
+def yearly_sales_report_s3():
+    # Query sales data for all years
     sales_data = db.session.query(
         db.func.extract('year', Sale.sale_date).label('year'),
         db.func.sum(Sale.sale_price * Sale.quantity_sold).label('total_sales')
-    ).filter(db.func.extract('year', Sale.sale_date) == current_year)  # Filter by current year
-    sales_data = sales_data.group_by('year').all()
+    ).group_by('year').order_by('year').all()  # Group by year and sort by year
 
     # Prepare the data for the chart
     yearly_sales = {}
     for year, total_sales in sales_data:
-        yearly_sales[year] = total_sales
+        yearly_sales[int(year)] = total_sales  # Ensure the year is an integer
 
-    # Create a bar chart for the yearly sales
+    # Create a line chart for the yearly sales
     fig, ax = plt.subplots()
-    ax.bar(yearly_sales.keys(), yearly_sales.values())
+    ax.plot(list(yearly_sales.keys()), list(yearly_sales.values()), marker='o', linestyle='-', color='blue')
 
     ax.set_xlabel('Year')
     ax.set_ylabel('Total Sales')
-    ax.set_title(f'Yearly Sales Report ({current_year})')
+    ax.set_title('Yearly Sales Report')
 
-    # Save the figure to a BytesIO buffer and send it as PNG
+    # Save the figure to a BytesIO buffer
     img_io = io.BytesIO()
     plt.savefig(img_io, format='png')
     img_io.seek(0)
+    plt.close(fig)
 
-    return Response(img_io, mimetype='image/png')
+    # Upload to S3 and get the URL
+    s3_url = upload_image_to_s3(img_io)
+
+    if s3_url:
+        return jsonify({
+            "report_url": s3_url,
+            "years": list(yearly_sales.keys())
+        })
+    else:
+        return jsonify({
+            "error": "Failed to generate or upload sales report"
+        }), 500
 
 
 # API endpoint for quarterly report
 @app.route('/api/sales/report/quarterly', methods=['GET'])
-def quarterly_sales_report_png():
+def quarterly_sales_report_s3():
     current_year = datetime.now().year
 
     # Query sales data for the current year, grouped by quarter
@@ -343,96 +582,56 @@ def quarterly_sales_report_png():
     ax.set_xticks(range(1, 5))
     ax.set_xticklabels(['Q1', 'Q2', 'Q3', 'Q4'])
 
-    # Save the figure to a BytesIO buffer and send it as PNG
+    # Save the figure to a BytesIO buffer
     img_io = io.BytesIO()
     plt.savefig(img_io, format='png')
     img_io.seek(0)
+    plt.close(fig)
 
-    return Response(img_io, mimetype='image/png')
+    # Upload to S3 and get the URL
+    s3_url = upload_image_to_s3(img_io)
 
-
-# API endpoint for specific month/year report
-
-@app.route('/api/sales/report/specific-month-png', methods=['GET'])
-def sales_report_for_month_of_year_png():
-    # Retrieve year and month from the query parameters
-    year = request.args.get('year', type=int)
-    month = request.args.get('month', type=int)
-
-    # Ensure both parameters are provided
-    if not year or not month:
-        return jsonify({"error": "Both 'year' and 'month' parameters are required."}), 400
-
-    # Your query logic here
-    # Generate the sales report for a specific month of a specific year
-    sales_data = db.session.query(
-        func.extract('month', Sale.sale_date).label('month'),
-        func.sum(Sale.quantity_sold).label('total_quantity_sold')
-    ).filter(
-        func.extract('year', Sale.sale_date) == year,
-        func.extract('month', Sale.sale_date) == month
-    ).group_by('month').all()
-
-    # If no data found, return an error
-    if not sales_data:
-        return jsonify({"error": "No sales data found for the specified month and year."}), 404
-
-    # Here, create the chart (PNG image) from the `sales_data`
-    # Example of creating a basic bar chart and saving it as a PNG image
-    months = [str(record.month) for record in sales_data]
-    quantities_sold = [record.total_quantity_sold for record in sales_data]
-
-    plt.bar(months, quantities_sold)
-    plt.title(f"Sales Report for {month}/{year}")
-    plt.xlabel("Month")
-    plt.ylabel("Total Quantity Sold")
-
-    # Save the plot to a BytesIO object instead of a file
-    img = io.BytesIO()
-    plt.savefig(img, format='png')
-    img.seek(0)
-
-    # Return the PNG image
-    return send_file(img, mimetype='image/png')
+    if s3_url:
+        return jsonify({
+            "report_url": s3_url,
+            "year": current_year
+        })
+    else:
+        return jsonify({
+            "error": "Failed to generate or upload sales report"
+        }), 500
 
 
 # API endpoint for specific year report
 @app.route('/api/sales/report/year/<int:year>', methods=['GET'])
 def sales_report_for_year_png(year):
-    # Query sales data for the specified year
     sales_data = db.session.query(
         db.func.extract('year', Sale.sale_date).label('year'),
         db.func.sum(Sale.sale_price * Sale.quantity_sold).label('total_sales')
-    ).filter(db.func.extract('year', Sale.sale_date) == year)  # Filter by specified year
-    sales_data = sales_data.group_by('year').all()
+    ).filter(db.func.extract('year', Sale.sale_date) == year).group_by('year').all()
 
-    # Prepare the data for the chart
-    yearly_sales = {}
-    for year, total_sales in sales_data:
-        yearly_sales[year] = total_sales
+    yearly_sales = {year: total_sales for year, total_sales in sales_data}
 
-    # Create a bar chart for the specified year
     fig, ax = plt.subplots()
     ax.bar(yearly_sales.keys(), yearly_sales.values())
-
     ax.set_xlabel('Year')
     ax.set_ylabel('Total Sales')
     ax.set_title(f'Sales Report for {year}')
 
-    # Save the figure to a BytesIO buffer and send it as PNG
-    img_io = io.BytesIO()
-    plt.savefig(img_io, format='png')
-    img_io.seek(0)
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png')
+    buf.seek(0)
+    plt.close(fig)
 
-    return Response(img_io, mimetype='image/png')
+    s3_url = upload_image_to_s3(buf, prefix='sales-year-report/')
+    if s3_url:
+        return jsonify({"report_url": s3_url})
+    return {"error": "Failed to upload sales report to S3"}, 500
 
 
 @app.route('/api/sales/item-report/monthly', methods=['GET'])
 def item_sales_report_monthly():
-    # Get the current year (you can modify this to take from request if needed)
     current_year = datetime.now().year
-
-    # Query the database to get sales data by item and month
     sales = db.session.query(
         extract('month', Sale.sale_date).label('month'),
         Item.item_name,
@@ -442,43 +641,37 @@ def item_sales_report_monthly():
         .group_by(extract('month', Sale.sale_date), Item.item_name) \
         .order_by(extract('month', Sale.sale_date)).all()
 
-    # Prepare data for the chart
     months = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
     items = list(set(sale.item_name for sale in sales))
-
-    # Create a dictionary to hold monthly sales for each item
     item_monthly_sales = {item: [0] * 12 for item in items}
 
-    # Populate the dictionary with sales data
     for sale in sales:
-        month = int(sale.month) - 1  # Convert month to integer and adjust to 0-indexed
+        month = int(sale.month) - 1
         item_monthly_sales[sale.item_name][month] = sale.total_quantity
 
-    # Create the chart
     fig, ax = plt.subplots(figsize=(10, 6))
-
-    # Plot data for each item
     for item, quantities in item_monthly_sales.items():
         ax.plot(months, quantities, label=item)
 
-    # Set chart labels and title
     ax.set_xlabel('Month')
     ax.set_ylabel('Total Quantity Sold')
     ax.set_title(f"Monthly Sales Report for {current_year}")
     ax.legend(title='Items')
 
-    # Save the figure to a PNG buffer
     buf = io.BytesIO()
     plt.savefig(buf, format="png")
     buf.seek(0)
+    plt.close(fig)
 
-    # Return the PNG image as a response
-    return send_file(buf, mimetype='image/png')
+    # Upload the chart to S3
+    s3_url = upload_image_to_s3(buf, prefix='monthly-sales/')
+    if s3_url:
+        return jsonify({"report_url": s3_url})
+    return {"error": "Failed to upload sales report to S3"}, 500
 
 
 @app.route('/api/sales/item-report/yearly', methods=['GET'])
 def item_sales_report_yearly():
-    # Query the database to get sales data by item and year
     sales = db.session.query(
         extract('year', Sale.sale_date).label('year'),
         Item.item_name,
@@ -487,43 +680,43 @@ def item_sales_report_yearly():
         .group_by(extract('year', Sale.sale_date), Item.item_name) \
         .order_by(extract('year', Sale.sale_date)).all()
 
-    # Prepare data for the chart
-    years = list(set(sale.year for sale in sales))
-    items = list(set(sale.item_name for sale in sales))
-
-    # Create a dictionary to hold yearly sales for each item
+    years = sorted(list(set(sale.year for sale in sales)))
+    items = sorted(list(set(sale.item_name for sale in sales)))
     item_yearly_sales = {item: [0] * len(years) for item in items}
 
-    # Populate the dictionary with sales data
     for sale in sales:
         year_index = years.index(sale.year)
         item_yearly_sales[sale.item_name][year_index] = sale.total_quantity
 
-    # Create the chart
-    fig, ax = plt.subplots(figsize=(10, 6))
+    bar_width = 0.8 / len(items)
+    x_positions = range(len(years))
 
-    # Plot data for each item
-    for item, quantities in item_yearly_sales.items():
-        ax.plot(years, quantities, label=item)
+    fig, ax = plt.subplots(figsize=(12, 8))
+    for i, (item, quantities) in enumerate(item_yearly_sales.items()):
+        offsets = [pos + i * bar_width for pos in x_positions]
+        ax.bar(offsets, quantities, bar_width, label=item)
 
-    # Set chart labels and title
+    ax.set_xticks([pos + (len(items) - 1) * bar_width / 2 for pos in x_positions])
+    ax.set_xticklabels(years)
     ax.set_xlabel('Year')
     ax.set_ylabel('Total Quantity Sold')
     ax.set_title("Yearly Sales Report")
     ax.legend(title='Items')
 
-    # Save the figure to a PNG buffer
     buf = io.BytesIO()
     plt.savefig(buf, format="png")
     buf.seek(0)
+    plt.close(fig)
 
-    # Return the PNG image as a response
-    return send_file(buf, mimetype='image/png')
+    # Upload the chart to S3
+    s3_url = upload_image_to_s3(buf, prefix='yearly-sales/')
+    if s3_url:
+        return jsonify({"report_url": s3_url})
+    return {"error": "Failed to upload sales report to S3"}, 500
 
 
 @app.route('/api/sales/item-report/quarterly', methods=['GET'])
 def item_sales_report_quarterly():
-    # Query the database to get sales data by item and quarter
     sales = db.session.query(
         extract('quarter', Sale.sale_date).label('quarter'),
         Item.item_name,
@@ -532,131 +725,118 @@ def item_sales_report_quarterly():
         .group_by(extract('quarter', Sale.sale_date), Item.item_name) \
         .order_by(extract('quarter', Sale.sale_date)).all()
 
-    # Prepare data for the chart
     quarters = [1, 2, 3, 4]
-    items = list(set(sale.item_name for sale in sales))
-
-    # Create a dictionary to hold quarterly sales for each item
+    items = sorted(list(set(sale.item_name for sale in sales)))
     item_quarterly_sales = {item: [0] * 4 for item in items}
 
-    # Populate the dictionary with sales data
     for sale in sales:
-        quarter = int(sale.quarter) - 1  # Convert quarter to integer and adjust to 0-indexed
+        quarter = int(sale.quarter) - 1
         item_quarterly_sales[sale.item_name][quarter] = sale.total_quantity
 
-    # Create the chart
-    fig, ax = plt.subplots(figsize=(10, 6))
+    bar_width = 0.8 / len(items)
+    x_positions = range(len(quarters))
 
-    # Plot data for each item
-    for item, quantities in item_quarterly_sales.items():
-        ax.plot(quarters, quantities, label=item)
+    fig, ax = plt.subplots(figsize=(12, 8))
+    for i, (item, quantities) in enumerate(item_quarterly_sales.items()):
+        offsets = [pos + i * bar_width for pos in x_positions]
+        ax.bar(offsets, quantities, bar_width, label=item)
 
-    # Set chart labels and title
+    ax.set_xticks([pos + (len(items) - 1) * bar_width / 2 for pos in x_positions])
+    ax.set_xticklabels([f"Q{q}" for q in quarters])
     ax.set_xlabel('Quarter')
     ax.set_ylabel('Total Quantity Sold')
     ax.set_title("Quarterly Sales Report")
     ax.legend(title='Items')
 
-    # Save the figure to a PNG buffer
     buf = io.BytesIO()
     plt.savefig(buf, format="png")
     buf.seek(0)
+    plt.close(fig)
 
-    # Return the PNG image as a response
-    return send_file(buf, mimetype='image/png')
+    # Upload the chart to S3
+    s3_url = upload_image_to_s3(buf, prefix='quarterly-sales/')
+    if s3_url:
+        return jsonify({"report_url": s3_url})
+    return {"error": "Failed to upload sales report to S3"}, 500
 
 
 @app.route('/api/sales/item-report/year/<int:year>', methods=['GET'])
 def item_sales_report_specific_year(year):
-    # Query the database to get sales data for a specific year
     sales = db.session.query(
-        extract('year', Sale.sale_date).label('year'),
         Item.item_name,
         db.func.sum(Sale.quantity_sold).label('total_quantity')
     ).join(Sale, Sale.item_id == Item.item_id) \
         .filter(extract('year', Sale.sale_date) == year) \
-        .group_by(extract('year', Sale.sale_date), Item.item_name) \
-        .order_by(extract('year', Sale.sale_date)).all()
+        .group_by(Item.item_name) \
+        .order_by(Item.item_name).all()
 
-    # Prepare data for the chart
-    items = list(set(sale.item_name for sale in sales))
+    items = [sale.item_name for sale in sales]
+    quantities = [sale.total_quantity for sale in sales]
 
-    # Create a dictionary to hold sales for each item in the specific year
-    item_year_sales = {item: [0] for item in items}
-
-    # Populate the dictionary with sales data
-    for sale in sales:
-        item_year_sales[sale.item_name][0] = sale.total_quantity
-
-    # Create the chart
-    fig, ax = plt.subplots(figsize=(10, 6))
-
-    # Plot data for each item
-    for item, quantities in item_year_sales.items():
-        ax.plot([year], quantities, label=item)
-
-    # Set chart labels and title
-    ax.set_xlabel('Year')
+    fig, ax = plt.subplots(figsize=(12, 6))
+    ax.bar(items, quantities, color='skyblue')
+    ax.set_xlabel('Items')
     ax.set_ylabel('Total Quantity Sold')
     ax.set_title(f"Sales Report for {year}")
-    ax.legend(title='Items')
+    ax.set_xticks(range(len(items)))
+    ax.set_xticklabels(items, rotation=45, ha='right')
 
-    # Save the figure to a PNG buffer
+    for i, quantity in enumerate(quantities):
+        ax.text(i, quantity + 0.5, str(quantity), ha='center', va='bottom')
+
     buf = io.BytesIO()
+    plt.tight_layout()
     plt.savefig(buf, format="png")
     buf.seek(0)
+    plt.close(fig)
 
-    # Return the PNG image as a response
-    return send_file(buf, mimetype='image/png')
+    # Upload the chart to S3
+    s3_url = upload_image_to_s3(buf, prefix=f'yearly-sales/{year}/')
+    if s3_url:
+        return jsonify({"report_url": s3_url})
+    return {"error": "Failed to upload sales report to S3"}, 500
 
 
 @app.route('/api/sales/item-report/month/<int:year>/<int:month>', methods=['GET'])
 def item_sales_report_specific_month(year, month):
-    # Query the database to get sales data for a specific month and year
     sales = db.session.query(
-        extract('month', Sale.sale_date).label('month'),
         Item.item_name,
         db.func.sum(Sale.quantity_sold).label('total_quantity')
     ).join(Sale, Sale.item_id == Item.item_id) \
         .filter(extract('year', Sale.sale_date) == year) \
         .filter(extract('month', Sale.sale_date) == month) \
-        .group_by(extract('month', Sale.sale_date), Item.item_name) \
-        .order_by(extract('month', Sale.sale_date)).all()
+        .group_by(Item.item_name) \
+        .order_by(Item.item_name).all()
 
-    # Prepare data for the chart
-    items = list(set(sale.item_name for sale in sales))
+    items = [sale.item_name for sale in sales]
+    quantities = [sale.total_quantity for sale in sales]
 
-    # Create a dictionary to hold sales for each item in the specific month
-    item_month_sales = {item: [0] for item in items}
-
-    # Populate the dictionary with sales data
-    for sale in sales:
-        item_month_sales[sale.item_name][0] = sale.total_quantity
-
-    # Create the chart
-    fig, ax = plt.subplots(figsize=(10, 6))
-
-    # Plot data for each item
-    for item, quantities in item_month_sales.items():
-        ax.plot([month], quantities, label=item)
-
-    # Set chart labels and title
-    ax.set_xlabel('Month')
+    fig, ax = plt.subplots(figsize=(12, 6))
+    ax.bar(items, quantities, color='skyblue')
+    ax.set_xlabel('Items')
     ax.set_ylabel('Total Quantity Sold')
     ax.set_title(f"Sales Report for {month}/{year}")
-    ax.legend(title='Items')
+    ax.set_xticks(range(len(items)))
+    ax.set_xticklabels(items, rotation=45, ha='right')
 
-    # Save the figure to a PNG buffer
+    for i, quantity in enumerate(quantities):
+        ax.text(i, quantity + 0.5, str(quantity), ha='center', va='bottom')
+
     buf = io.BytesIO()
+    plt.tight_layout()
     plt.savefig(buf, format="png")
     buf.seek(0)
+    plt.close(fig)
 
-    # Return the PNG image as a response
-    return send_file(buf, mimetype='image/png')
+    # Upload the chart to S3
+    s3_url = upload_image_to_s3(buf, prefix=f'monthly-sales/{year}/{month}/')
+    if s3_url:
+        return jsonify({"report_url": s3_url})
+    return {"error": "Failed to upload sales report to S3"}, 500
 
 
 @app.route('/sales_trends/<int:item_id>', methods=['GET'])
-def sales_trend(item_id):
+def sales_trend_s3(item_id):
     # Query for the item name and its sales
     item = Item.query.get(item_id)
     if not item:
@@ -692,58 +872,111 @@ def sales_trend(item_id):
     plt.close(fig)
     img_buffer.seek(0)
 
-    return Response(img_buffer, mimetype='image/png')
+    # Upload to S3 and get the URL
+    s3_url = upload_image_to_s3(img_buffer)
+
+    if s3_url:
+        return jsonify({
+            "report_url": s3_url,
+            "item_name": item.item_name,
+            "item_id": item_id
+        })
+    else:
+        return jsonify({
+            "error": "Failed to generate or upload sales trend"
+        }), 500
 
 
 @app.route('/sales-trends-all', methods=['GET'])
 def sales_trends_all():
-    # Fetch all items from the Item table
     with app.app_context():
         items = db.session.query(Item).all()
         if not items:
             return {"error": "No items found in the database"}, 404
 
-        # Prepare a dictionary to store all sales data for plotting
         sales_data = {}
-
         for item in items:
             item_id = item.item_id
             item_name = item.item_name
-
-            # Query sales data by year for each item
             yearly_sales = db.session.query(
                 extract('year', Sale.sale_date).label('year'),
                 db.func.sum(Sale.quantity_sold).label('total_quantity')
             ).filter(Sale.item_id == item_id).group_by('year').order_by('year').all()
 
-            # If there's no sales data for an item, skip it
             if not yearly_sales:
                 continue
-
-            # Convert query results to a DataFrame for plotting
             df = pd.DataFrame(yearly_sales, columns=['Year', 'Total Quantity Sold'])
-            sales_data[item_name] = df  # Store each item's sales data by name for the plots
+            sales_data[item_name] = df
 
-    # Plotting each item's sales trend in a grid
     fig, axs = plt.subplots(len(sales_data), 1, figsize=(10, 6 * len(sales_data)), squeeze=False)
     fig.subplots_adjust(hspace=0.4)
 
     for idx, (item_name, df) in enumerate(sales_data.items()):
         ax = axs[idx, 0]
-        ax.plot(df['Year'], df['Total Quantity Sold'], marker='o', color='b', linestyle='-')
+        ax.bar(df['Year'], df['Total Quantity Sold'], color='skyblue')
         ax.set_title(f'Sales Trend for {item_name}')
         ax.set_xlabel('Year')
         ax.set_ylabel('Total Quantity Sold')
-        ax.grid(True)
+        ax.grid(axis='y')
+        for i, quantity in enumerate(df['Total Quantity Sold']):
+            ax.text(df['Year'][i], quantity + 0.5, str(quantity), ha='center', va='bottom')
 
-    # Save the plot as a single image to a bytes buffer
     buf = io.BytesIO()
+    plt.tight_layout()
     plt.savefig(buf, format='png')
     buf.seek(0)
-    plt.close()
+    plt.close(fig)
 
-    return send_file(buf, mimetype='image/png')
+    # Upload to S3
+    s3_url = upload_image_to_s3(buf, prefix='sales-trends/')
+    if s3_url:
+        return jsonify({"report_url": s3_url})
+    return {"error": "Failed to upload sales report to S3"}, 500
 
+
+# API endpoint for specific month/year report
+
+# @app.route('/api/sales/report/specific-month-png', methods=['GET'])
+# def sales_report_for_month_of_year_png():
+#     # Retrieve year and month from the query parameters
+#     year = request.args.get('year', type=int)
+#     month = request.args.get('month', type=int)
+#
+#     # Ensure both parameters are provided
+#     if not year or not month:
+#         return jsonify({"error": "Both 'year' and 'month' parameters are required."}), 400
+#
+#     # Your query logic here
+#     # Generate the sales report for a specific month of a specific year
+#     sales_data = db.session.query(
+#         func.extract('month', Sale.sale_date).label('month'),
+#         func.sum(Sale.quantity_sold).label('total_quantity_sold')
+#     ).filter(
+#         func.extract('year', Sale.sale_date) == year,
+#         func.extract('month', Sale.sale_date) == month
+#     ).group_by('month').all()
+#
+#     # If no data found, return an error
+#     if not sales_data:
+#         return jsonify({"error": "No sales data found for the specified month and year."}), 404
+#
+#     # Here, create the chart (PNG image) from the `sales_data`
+#     # Example of creating a basic bar chart and saving it as a PNG image
+#     months = [str(record.month) for record in sales_data]
+#     quantities_sold = [record.total_quantity_sold for record in sales_data]
+#
+#     plt.bar(months, quantities_sold)
+#     plt.title(f"Sales Report for {month}/{year}")
+#     plt.xlabel("Month")
+#     plt.ylabel("Total Quantity Sold")
+#
+#     # Save the plot to a BytesIO object instead of a file
+#     img = io.BytesIO()
+#     plt.savefig(img, format='png')
+#     img.seek(0)
+#
+#     # Return the PNG image
+#     return send_file(img, mimetype='image/png')
 
 if __name__ == '__main__':
     app.run(debug=True)
