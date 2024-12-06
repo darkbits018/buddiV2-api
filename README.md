@@ -140,86 +140,154 @@ Returns PDF invoice for the specified sale
 
 ### Reports
 
-#### Monthly Sales Report
-```http
-GET /api/sales/report/monthly
-```
-Returns PNG image of monthly sales chart for current year
+### 1. Monthly Sales Report
+- **Endpoint:** `/api/sales/report/monthly`
+- **Method:** GET
+- **Description:** Generates a monthly sales report for the current year
+- **Response:**
+  - `image_url`: URL of the generated PNG sales chart
+  - **Chart Details:** 
+    - X-axis: Months (Jan-Dec)
+    - Y-axis: Total Sales
+    - Title: Monthly Sales Report (Current Year)
 
-#### Yearly Sales Report
-```http
-GET /api/sales/report/yearly
-```
-Returns PNG image of yearly sales chart
+### 2. Yearly Sales Report
+- **Endpoint:** `/api/sales/report/yearly`
+- **Method:** GET
+- **Description:** Generates a line chart of total sales across all years
+- **Response:**
+  - `report_url`: URL of the generated PNG sales chart
+  - `years`: List of years with sales data
+  - **Chart Details:**
+    - X-axis: Years
+    - Y-axis: Total Sales
+    - Marker: Circular points
+    - Line Style: Solid blue line
 
-#### Quarterly Sales Report
-```http
-GET /api/sales/report/quarterly
-```
-Returns PNG image of quarterly sales chart
+### 3. Quarterly Sales Report
+- **Endpoint:** `/api/sales/report/quarterly`
+- **Method:** GET
+- **Description:** Generates a quarterly sales report for the current year
+- **Response:**
+  - `report_url`: URL of the generated PNG sales chart
+  - `year`: Current year of the report
+  - **Chart Details:**
+    - X-axis: Quarters (Q1-Q4)
+    - Y-axis: Total Sales
+    - Title: Quarterly Sales Report (Current Year)
 
-#### Specific Month/Year Report
-```http
-GET /api/sales/report/specific-month-png?year=<year>&month=<month>
-```
-Returns PNG image of sales report for specific month and year
+### 4. Specific Year Sales Report
+- **Endpoint:** `/api/sales/report/year/<int:year>`
+- **Method:** GET
+- **Description:** Generates a sales report for a specific year
+- **Parameters:**
+  - `year`: Target year for the report (integer)
+- **Response:**
+  - `report_url`: URL of the generated PNG sales chart
+  - **Chart Details:**
+    - X-axis: Year
+    - Y-axis: Total Sales
+    - Title: Sales Report for [Specified Year]
 
-#### Specific Year Report
-```http
-GET /api/sales/report/year/<year>
-```
-Returns PNG image of sales report for specific year
+### 5. Monthly Item Sales Report
+- **Endpoint:** `/api/sales/item-report/monthly`
+- **Method:** GET
+- **Description:** Generates a monthly sales report for all items in the current year
+- **Response:**
+  - `report_url`: URL of the generated PNG sales chart
+  - **Chart Details:**
+    - X-axis: Months
+    - Y-axis: Total Quantity Sold
+    - Multiple lines representing different items
+    - Title: Monthly Sales Report for Current Year
 
-### Item-Specific Reports
+### 6. Yearly Item Sales Report
+- **Endpoint:** `/api/sales/item-report/yearly`
+- **Method:** GET
+- **Description:** Generates a yearly sales report comparing items across years
+- **Response:**
+  - `report_url`: URL of the generated PNG sales chart
+  - **Chart Details:**
+    - X-axis: Years
+    - Y-axis: Total Quantity Sold
+    - Grouped bar chart with different items
+    - Title: Yearly Sales Report
 
-#### Monthly Item Sales Report
-```http
-GET /api/sales/item-report/monthly
-```
-Returns PNG image of monthly sales chart by item
+### 7. Quarterly Item Sales Report
+- **Endpoint:** `/api/sales/report/quarterly`
+- **Method:** GET
+- **Description:** Generates a quarterly sales report comparing items
+- **Response:**
+  - `report_url`: URL of the generated PNG sales chart
+  - **Chart Details:**
+    - X-axis: Quarters (Q1-Q4)
+    - Y-axis: Total Quantity Sold
+    - Grouped bar chart with different items
+    - Title: Quarterly Sales Report
 
-#### Yearly Item Sales Report
-```http
-GET /api/sales/item-report/yearly
-```
-Returns PNG image of yearly sales chart by item
+### 8. Specific Year Item Sales Report
+- **Endpoint:** `/api/sales/item-report/year/<int:year>`
+- **Method:** GET
+- **Description:** Generates an item sales report for a specific year
+- **Parameters:**
+  - `year`: Target year for the report (integer)
+- **Response:**
+  - `report_url`: URL of the generated PNG sales chart
+  - **Chart Details:**
+    - X-axis: Items
+    - Y-axis: Total Quantity Sold
+    - Bar chart with quantity labels
+    - Title: Sales Report for [Specified Year]
 
-#### Quarterly Item Sales Report
-```http
-GET /api/sales/item-report/quarterly
-```
-Returns PNG image of quarterly sales chart by item
+### 9. Specific Month Item Sales Report
+- **Endpoint:** `/api/sales/item-report/month/<int:year>/<int:month>`
+- **Method:** GET
+- **Description:** Generates an item sales report for a specific month and year
+- **Parameters:**
+  - `year`: Target year (integer)
+  - `month`: Target month (integer, 1-12)
+- **Response:**
+  - `report_url`: URL of the generated PNG sales chart
+  - **Chart Details:**
+    - X-axis: Items
+    - Y-axis: Total Quantity Sold
+    - Bar chart with quantity labels
+    - Title: Sales Report for [Month]/[Year]
 
-#### Specific Year Item Report
-```http
-GET /api/sales/item-report/year/<year>
-```
-Returns PNG image of sales report by item for specific year
+### 10. Single Item Sales Trend
+- **Endpoint:** `/sales_trends/<int:item_id>`
+- **Method:** GET
+- **Description:** Generates a sales trend report for a specific item
+- **Parameters:**
+  - `item_id`: Unique identifier for the item (integer)
+- **Response:**
+  - `report_url`: URL of the generated PNG sales trend chart
+  - `item_name`: Name of the item
+  - `item_id`: ID of the item
+  - **Chart Details:**
+    - X-axis: Years
+    - Y-axis: Quantity Sold
+    - Line plot with markers
+    - Title: Sales Trend for [Item Name]
 
-#### Specific Month Item Report
-```http
-GET /api/sales/item-report/month/<year>/<month>
-```
-Returns PNG image of sales report by item for specific month and year
-
-### Sales Trends
-
-#### Individual Item Sales Trend
-```http
-GET /sales_trends/<item_id>
-```
-Returns PNG image of sales trend chart for specific item
-
-#### All Items Sales Trends
-```http
-GET /sales-trends-all
-```
-Returns PNG image of sales trends chart for all items
+### 11. All Items Sales Trends
+- **Endpoint:** `/sales-trends-all`
+- **Method:** GET
+- **Description:** Generates sales trend reports for all items
+- **Response:**
+  - `report_url`: URL of the generated PNG sales trends chart
+  - **Chart Details:**
+    - Separate subplot for each item
+    - X-axis: Years
+    - Y-axis: Total Quantity Sold
+    - Bar chart with quantity labels
 
 ## Response Formats
 - JSON responses for data operations
-- PNG images for reports and charts
-- PDF for invoices
+- All reports are generated as PNG images
+- Images are automatically uploaded to S3 and a public URL is returned
+- Reports are dynamically generated based on available sales data
+- Time-based reports default to the current year when applicable
 
 ## Error Handling
 The API returns appropriate HTTP status codes:

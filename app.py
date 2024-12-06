@@ -172,7 +172,7 @@ def generate_invoice(sale_id):
     return buffer
 
 
-@app.route('/farmers', methods=['POST'])
+app.route('/farmers', methods=['POST'])
 def create_farmer():
     data = request.get_json()
     farmer = Farmer(name=data['name'], phone_number=data['phone_number'], email=data['email'], address=data['address'])
@@ -363,104 +363,6 @@ def generate_sales_chart(data, title, xlabel, ylabel):
 import matplotlib.pyplot as plt
 import io
 from flask import Response
-
-
-# @app.route('/api/sales/report/monthly-png', methods=['GET'])
-# def monthly_sales_report_png():
-#     current_year = datetime.now().year
-#
-#     # Query sales data for the current year, grouped by month
-#     sales_data = db.session.query(
-#         db.func.extract('month', Sale.sale_date).label('month'),
-#         db.func.sum(Sale.sale_price * Sale.quantity_sold).label('total_sales')
-#     ).filter(db.func.extract('year', Sale.sale_date) == current_year)  # Filter by current year
-#     sales_data = sales_data.group_by('month').all()
-#
-#     # Prepare the data for the chart
-#     months = [i for i in range(1, 13)]
-#     sales = {month: 0 for month in months}
-#     for month, total_sales in sales_data:
-#         sales[int(month)] = total_sales
-#
-#     # Create a bar chart for the monthly sales
-#     fig, ax = plt.subplots()
-#     ax.bar(sales.keys(), sales.values())
-#
-#     ax.set_xlabel('Month')
-#     ax.set_ylabel('Total Sales')
-#     ax.set_title(f'Monthly Sales Report ({current_year})')
-#     ax.set_xticks(range(1, 13))
-#     ax.set_xticklabels(['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'])
-#
-#     # Save the figure to a BytesIO buffer and send it as PNG
-#     img_io = io.BytesIO()
-#     plt.savefig(img_io, format='png')
-#     img_io.seek(0)
-#
-#     return Response(img_io, mimetype='image/png')
-#
-#
-# # API endpoint for yearly report
-#
-# @app.route('/api/sales/report/monthly-data', methods=['GET'])
-# def monthly_sales_report_json():
-#     current_year = datetime.now().year
-#
-#     # Query sales data for the current year, grouped by month
-#     sales_data = db.session.query(
-#         db.func.extract('month', Sale.sale_date).label('month'),
-#         db.func.sum(Sale.sale_price * Sale.quantity_sold).label('total_sales')
-#     ).filter(db.func.extract('year', Sale.sale_date) == current_year)  # Filter by current year
-#     sales_data = sales_data.group_by('month').all()
-#
-#     # Prepare the data for the frontend
-#     months = [i for i in range(1, 13)]
-#     sales = {month: 0 for month in months}
-#     for month, total_sales in sales_data:
-#         sales[int(month)] = total_sales
-#
-#     # Prepare the response data in JSON format
-#     response_data = {
-#         'months': ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
-#         'sales': list(sales.values())
-#     }
-#
-#     # Return the data as JSON
-#     return jsonify(response_data)
-
-
-# @app.route('/api/sales/report/monthly-bsf', methods=['GET'])
-# def monthly_sales_report_json():
-#     current_year = datetime.now().year
-#
-#     # Query sales data for the current year, grouped by month
-#     sales_data = db.session.query(
-#         db.func.extract('month', Sale.sale_date).label('month'),
-#         db.func.sum(Sale.sale_price * Sale.quantity_sold).label('total_sales')
-#     ).filter(db.func.extract('year', Sale.sale_date) == current_year)  # Filter by current year
-#     sales_data = sales_data.group_by('month').all()
-#
-#     # Prepare the data for the frontend
-#     months = [i for i in range(1, 13)]
-#     sales = {month: 0 for month in months}
-#     for month, total_sales in sales_data:
-#         sales[int(month)] = total_sales
-#
-#     # Prepare the response data in JSON format
-#     response_data = {
-#         'months': ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
-#         'sales': list(sales.values())
-#     }
-#
-#     # Convert the response data to a JSON string
-#     json_data = json.dumps(response_data)
-#
-#     # Encode the JSON string as base64
-#     base64_encoded_data = base64.b64encode(json_data.encode('utf-8')).decode('utf-8')
-#
-#     # Return the base64 encoded data as JSON
-#     return jsonify({'data': base64_encoded_data})
-
 
 @app.route('/api/sales/report/monthly', methods=['GET'])
 def monthly_sales_report_png():
@@ -934,49 +836,7 @@ def sales_trends_all():
     return {"error": "Failed to upload sales report to S3"}, 500
 
 
-# API endpoint for specific month/year report
 
-# @app.route('/api/sales/report/specific-month-png', methods=['GET'])
-# def sales_report_for_month_of_year_png():
-#     # Retrieve year and month from the query parameters
-#     year = request.args.get('year', type=int)
-#     month = request.args.get('month', type=int)
-#
-#     # Ensure both parameters are provided
-#     if not year or not month:
-#         return jsonify({"error": "Both 'year' and 'month' parameters are required."}), 400
-#
-#     # Your query logic here
-#     # Generate the sales report for a specific month of a specific year
-#     sales_data = db.session.query(
-#         func.extract('month', Sale.sale_date).label('month'),
-#         func.sum(Sale.quantity_sold).label('total_quantity_sold')
-#     ).filter(
-#         func.extract('year', Sale.sale_date) == year,
-#         func.extract('month', Sale.sale_date) == month
-#     ).group_by('month').all()
-#
-#     # If no data found, return an error
-#     if not sales_data:
-#         return jsonify({"error": "No sales data found for the specified month and year."}), 404
-#
-#     # Here, create the chart (PNG image) from the `sales_data`
-#     # Example of creating a basic bar chart and saving it as a PNG image
-#     months = [str(record.month) for record in sales_data]
-#     quantities_sold = [record.total_quantity_sold for record in sales_data]
-#
-#     plt.bar(months, quantities_sold)
-#     plt.title(f"Sales Report for {month}/{year}")
-#     plt.xlabel("Month")
-#     plt.ylabel("Total Quantity Sold")
-#
-#     # Save the plot to a BytesIO object instead of a file
-#     img = io.BytesIO()
-#     plt.savefig(img, format='png')
-#     img.seek(0)
-#
-#     # Return the PNG image
-#     return send_file(img, mimetype='image/png')
 
 if __name__ == '__main__':
     app.run(debug=True)
