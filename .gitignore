@@ -34,3 +34,4 @@ coverage.xml
 # Editor backup files
 *~
 *.swp
+./api-ref-doc.txt

@@ -1,12 +1,16 @@
+import bcrypt
 import matplotlib
 import os
+
+from contourpy.util import data
+from sqlalchemy.dialects.postgresql import psycopg2
 
 matplotlib.use('Agg')  # Set the non-interactive backend
 
 from flask import Flask, request, jsonify, send_file, json
 from sqlalchemy import func, extract
 from config import Config
-from models import db, Farmer, Item, Sale, Appointment, Buyer
+from models import db, Farmer, Item, Sale, Appointment, Buyer, User
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 import base64
@@ -22,12 +26,16 @@ from botocore.exceptions import NoCredentialsError, PartialCredentialsError, Cli
 from flask_cors import CORS  # Import CORS
 import uuid
 import matplotlib
+from flask_bcrypt import Bcrypt
+from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
+from werkzeug.security import generate_password_hash, check_password_hash
 
 matplotlib.use('Agg')
 
 app = Flask(__name__)
 app.config.from_object(Config)
-
+bcrypt = Bcrypt(app)
+jwt = JWTManager(app)
 db.init_app(app)
 CORS(app)
 
@@ -106,6 +114,42 @@ def upload_image_to_s3(img_buffer, prefix='sales-reports/'):
         return None
 
 
+# def execute_sql_command(query, params=None):
+#     conn = psycopg2.connect(Config.SQLALCHEMY_DATABASE_URI.replace('postgresql://', 'postgresql+psycopg2://'))
+#     cursor = conn.cursor()
+#     try:
+#         cursor.execute(query, params)
+#         conn.commit()
+#         return True
+#     except Exception as e:
+#         conn.rollback()
+#         print(f"Error executing query: {e}")
+#         return False
+#     finally:
+#         cursor.close()
+#         conn.close()
+
+import psycopg2
+
+
+def execute_sql_command(query, params=None):
+    try:
+        # Connect to the database using psycopg2
+        conn = psycopg2.connect(Config.SQLALCHEMY_DATABASE_URI)
+        cur = conn.cursor()
+        cur.execute(query, params)
+        conn.commit()
+
+        # Fetch result if needed
+        result = cur.fetchall() if query.strip().lower().startswith("select") else None
+
+        cur.close()
+        conn.close()
+        return result
+    except Exception as e:
+        raise e
+
+
 def upload_invoice_to_s3(pdf_buffer, prefix='invoice/'):
     """
     Upload a PDF buffer to S3 and return the public URL.
@@ -135,7 +179,6 @@ def upload_invoice_to_s3(pdf_buffer, prefix='invoice/'):
     except ClientError as e:
         app.logger.error(f"Error uploading to S3: {e}")
         return None
-
 
 
 def generate_invoice(sale_id):
@@ -172,7 +215,95 @@ def generate_invoice(sale_id):
     return buffer
 
 
+@app.route('/register', methods=['POST'])
+def register_user():
+    try:
+        # Extract JSON data from the request
+        data = request.get_json()
+        if not data:
+            return {"error": "No data provided"}, 400
+
+        # Validate required fields
+        required_fields = ['name', 'phone_number', 'email', 'address', 'password', 'role']
+        for field in required_fields:
+            if not data.get(field):
+                return {"error": f"Field '{field}' is required"}, 400
+
+        # Hash the password
+        hashed_password = generate_password_hash(data['password'], method='pbkdf2:sha256')
+
+        # Generate the new UID
+        uid_query = """
+        SELECT CONCAT(
+            'u',
+            COALESCE(MAX(CAST(SUBSTRING(uid FROM 2) AS INT)), 0) + 1
+        ) AS new_uid
+        FROM users;
+        """
+        new_uid_result = execute_sql_command(uid_query)
+        new_uid = new_uid_result[0][0] if new_uid_result else None
+        if not new_uid:
+            raise Exception("Failed to generate new UID.")
+
+        # Insert new user
+        insert_user_query = """
+        INSERT INTO users (uid, name, phone_number, email, address, password, role)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        RETURNING uid;
+        """
+        params = (
+            new_uid,
+            data['name'],
+            data['phone_number'],
+            data['email'],
+            data['address'],
+            hashed_password,
+            data['role']
+        )
+        print(f"Executing Query: {insert_user_query} with Params: {params}")
+        user_uid = execute_sql_command(insert_user_query, params)
+
+        if not user_uid:
+            return {"error": "User could not be created"}, 500
+
+        return {"uid": user_uid[0][0]}
+    except Exception as e:
+        print(f"Error during registration: {e}")
+        return {"error": str(e)}, 500
+
+
+@app.route('/login', methods=['POST'])
+def login():
+    data = request.get_json()
+    email = data.get('email')
+    password = data.get('password')
+
+    # Query the User model for the email
+    user = User.query.filter_by(email=email).first()
+
+    if user and check_password_hash(user.password, password):
+        if user.is_farmer():
+            farmer = Farmer.query.filter_by(user_id=user.uid).first()
+            return jsonify({
+                'message': 'Login successful',
+                'role': 'farmer',
+                'farmer_id': farmer.user_id if farmer else None
+            })
+        elif user.is_buyer():
+            buyer = Buyer.query.filter_by(user_id=user.uid).first()
+            return jsonify({
+                'message': 'Login successful',
+                'role': 'buyer',
+                'buyer_id': buyer.user_id if buyer else None
+            })
+        else:
+            return jsonify({'message': 'Unknown role'}), 400
+    return jsonify({'message': 'Invalid email or password'}), 401
+
+
 app.route('/farmers', methods=['POST'])
+
+
 def create_farmer():
     data = request.get_json()
     farmer = Farmer(name=data['name'], phone_number=data['phone_number'], email=data['email'], address=data['address'])
@@ -363,6 +494,7 @@ def generate_sales_chart(data, title, xlabel, ylabel):
 import matplotlib.pyplot as plt
 import io
 from flask import Response
+
 
 @app.route('/api/sales/report/monthly', methods=['GET'])
 def monthly_sales_report_png():
@@ -834,8 +966,6 @@ def sales_trends_all():
     if s3_url:
         return jsonify({"report_url": s3_url})
     return {"error": "Failed to upload sales report to S3"}, 500
-
-
 
 
 if __name__ == '__main__':

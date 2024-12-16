@@ -2,13 +2,40 @@ from flask_sqlalchemy import SQLAlchemy
 
 db = SQLAlchemy()
 
-class Farmer(db.Model):
-    __tablename__ = 'farmers'
-    farmer_id = db.Column(db.Integer, primary_key=True)
+
+class User(db.Model):
+    __tablename__ = 'users'
+    uid = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(255), nullable=False)
     phone_number = db.Column(db.String(15))
-    email = db.Column(db.String(255))
+    email = db.Column(db.String(255), unique=True, nullable=False)
     address = db.Column(db.Text)
+    password = db.Column(db.String(255), nullable=False)
+    role = db.Column(db.String(10), nullable=False)  # 'farmer' or 'buyer'
+
+    # Relationship back to Farmer or Buyer models
+    farmer = db.relationship('Farmer', backref='user', uselist=False, foreign_keys='Farmer.user_id')
+    buyer = db.relationship('Buyer', backref='user', uselist=False, foreign_keys='Buyer.user_id')
+
+    def is_farmer(self):
+        return self.role == 'farmer'
+
+    def is_buyer(self):
+        return self.role == 'buyer'
+
+
+
+class Farmer(db.Model):
+    __tablename__ = 'farmers'
+    user_id = db.Column(db.Integer, db.ForeignKey('users.uid'), primary_key=True)
+
+
+class Buyer(db.Model):
+    __tablename__ = 'buyers'
+    user_id = db.Column(db.Integer, db.ForeignKey('users.uid'), primary_key=True)
+    # Other fields if any
+
+
 
 
 class Item(db.Model):
@@ -21,13 +48,6 @@ class Item(db.Model):
     price = db.Column(db.Numeric(10, 2), nullable=False)
     created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
 
-class Buyer(db.Model):
-    __tablename__ = 'buyers'
-    buyer_id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(255), nullable=False)
-    phone_number = db.Column(db.String(15))
-    email = db.Column(db.String(255))
-    address = db.Column(db.Text)
 
 class Sale(db.Model):
     __tablename__ = 'sales'
@@ -37,6 +57,7 @@ class Sale(db.Model):
     quantity_sold = db.Column(db.Integer, nullable=False)
     sale_price = db.Column(db.Numeric(10, 2), nullable=False)
     sale_date = db.Column(db.DateTime, default=db.func.current_timestamp())
+
 
 class Appointment(db.Model):
     __tablename__ = 'appointments'
