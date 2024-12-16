@@ -1,3 +1,4 @@
+[![wakatime](https://wakatime.com/badge/github/darkbits018/buddiV2-api.svg)](https://wakatime.com/badge/github/darkbits018/buddiV2-api)
 # Farm Management System API Documentation
 
 ## Overview
