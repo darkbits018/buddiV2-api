@@ -1,65 +1,22 @@
-How did the 11-year-old laptop symbolize your journey? Did it feel like a companion, a challenge, or an obstacle you had to overcome?
-it felt like a companion
+Setting the Stage
+so here is how it went:
+we were in our 2nd year maybe,
 
-Was there a defining moment when you realized the old laptop wasn’t holding you back, but instead helping you grow in unexpected ways?
-i realized later in time when i got new laptop and started some advanced concepts and projects things didnt feel that difficult i think its because ive used every possible method to revive and make my old laptops work it promoted me to think critically, ithink all my excelent debugging skills thanks to this
 
-What emotions did you experience when you finally switched to the MacBook Pro? Relief? Gratitude? Nostalgia for the old machine?
-when i switched to macbook it was also 2011 model and i was using it in 2022 and even thogh performance of the machine was goo it didnt supprt the macos version update it was stuck in very old version challenging me to workaround the newer softwares
+Which hackathon or event were you attending? Where and when did it happen?
+It was a state level Hackathon conducted in anearby college, in 2022 maybe it was named sentinal hack 2.0
 
-What was the general hardware situation among your peers? Were you the only one with such an old machine, or was it common in your environment?
-i was the only one with such old machine, most them had good laptops compared to me even if it was low spec at least their machines were fine physically while i had the dell with dead keyboard, broken hinge
+What was the problem or challenge you were trying to solve? (Describe briefly the hackathon problem statement or task.
+problem statement : In traffic filled roads Rescue Vehicle's Siren sound spreads out and its confusing for commuters to make way, as they wont know from which direction the Rescue Vehicle is approaching and where its heading.
+motive : To install a low cost device in heavy traffic junctions on traffic lights to make way in critical situations for Fire Fighters and Ambulances
+Aim : to develop a system
+- Informs commuters from where the Rescue Vehicle is coming
+- To where the Rescue vehicle  is heading
+- Provide a way to clear traffic
+working theory :
+- A navigation app for Rescue Vehicle driver to know the best possible route to the destination
+- A hardware system installed on the traffic signals to let the commuters know the direction Rescue Vehicle is heading towards
+- The app would send signals to the system regarding the passage of Rescue Vehicle
 
-Did this create any unique challenges, such as feeling left out or being underestimated by others? How did you overcome these social or academic pressures?
-I didnt gave the chance to underestimate me while the others wth having the good machines were slowly doing things, i achieved much more with my old machine
-
-Did using AWS EC2 instances push you to learn more about cloud computing earlier than your peers? If so, how did that skill benefit you later?
-absolutely using AWS EC2 instances push me to learn more about cloud computing earlier. even though i didnt study it exclusive ly by using it practically i gained insights on various aspects of cloud
-
-What’s something you struggled with while using the old laptop that feels easy or trivial now?
-installing something in old laptops would require searching the depth of internet to find the compitable version of softwares now its just way too easy as new laptop has latest featuers and software support
-
-How would you approach a similar situation today if you had to work on an underpowered machine again? Would you do anything differently?
-i know its difficult but we have to make it work with wahat we have, actully we might find the searching workarounds for the obstacle much easier as we have ai tools like chatgpt
-
-Has the experience made you more empathetic or inspired you to help others who may be learning with limited resources?
-yes absolutely. i will help others in such situations may be offering my knowledge on working around the obstacles , or suggesting the resource ive used for learning
-
-How did working with limited resources shape your non-technical skills, like patience, problem-solving, or adaptability?
-it did reshape and eveolved my problem-solving, and adaptability.  it can be very frustrating working with old machines as for patience, well what can i say still working on it
-
-Were there moments when the constraints forced you to take a step back and reevaluate how you approached a problem (not just technically but conceptually)?
-yes there defnately were. While i had the idea to reevaluate whole thing, i also had the thought of getting the new laptop several time as of that time i wasnt financially afford the new laptop
-
-Do you still carry forward any habits or lessons from that experience? For example, do you still use Linux or leverage cloud resources even when you don’t need to?
-id sometimes , linux is very effiscient to work with
-
-Did this experience influence your career path or how you approach your work as a backend or AI/ML engineer?
-i might have i din gain experience in cloud , so id find way to host backend apis and database
-
-Was there a single incident that pushed you to your limits, such as your laptop crashing before a major deadline? How did you recover from it, and what did it teach you?
-oh my god almost every time, while it crash no progress weree gons as i expected this and had backups and git thank god. it thought me alwas us git , backups
-
-While others might have had better hardware, were there moments when you felt you performed better than your peers due to your creative problem-solving?
-every effing time (i may be narcissit), while i was slow in process and had to workaround for every step and had a deep learning curve , suppse if a task had 5 steps id have to workaround every step
-
-Did you learn any unconventional ways to optimize performance, such as reducing background processes, dual-booting, or scripting repetitive tasks?
-while dual booting is good id recommend using single boot ubuntu for efficiency, once you start with ubuntu youd rarely use any other windows os unless its absolutely necessary, ialso did try my hand at scripting repetitive tasks
-
-Were there specific tools or features in Linux or macOS that helped you beyond what others around you were using
-Linux or macOS are literally tailor made for devs
-
-Were there funny or quirky moments, like your laptop taking ages to compile code, or you having to wait for an hour just to boot up?
-yea booting was soooooo slow. sometimes i hhad to wait over an hour to compile and after it compiled itd immedeatly crash or hang
-
-Did you nickname the old laptop? (Adding some personality to the machine could make the story more relatable.)
-id call my old dell tractor as it made similar sound
-as it was old machine it had weared out a small piece from the body was cut and itd obstruct the fan while cooling itd make very noisy like a tractor
-
-Did working with an old machine make you more grateful for newer tools or resources?
-i cant thank enough for both old and new tools
-old ones for reshaping me and new ones for convieninebnce
-
-Do you think it shaped your perspective on privilege in tech—how some people can afford better hardware while others have to make do with what they have?
-honestly yes ive always felt jealous of the people could eaasly get the newer version or good machines there is a huge difference in performance
+How old was your Dell Vostro at the time? Were there specific limitations you faced? (e.g., performance lags, battery issues, outdated software, limited internet access).
 

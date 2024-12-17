@@ -14,7 +14,7 @@ from models import db, Farmer, Item, Sale, Appointment, Buyer, User
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
 import base64
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 import io
 import matplotlib.pyplot as plt
 from flask import Flask, request, send_file
@@ -38,6 +38,7 @@ bcrypt = Bcrypt(app)
 jwt = JWTManager(app)
 db.init_app(app)
 CORS(app)
+JWT_SECRET_KEY = os.getenv('JWT_SECRET_KEY')
 
 # Initialize S3 client with credentials from .env file
 s3_client = boto3.client(
@@ -215,6 +216,20 @@ def generate_invoice(sale_id):
     return buffer
 
 
+def get_jwt_exp_time_utc(access_token):
+    from jwt import decode
+    from flask import current_app
+
+    secret_key = current_app.config['JWT_SECRET_KEY']
+    algorithm = current_app.config.get('JWT_ALGORITHM', 'HS256')
+
+    decoded_token = decode(access_token, secret_key, algorithms=[algorithm])
+    exp_time_utcstamp = decoded_token.get('exp', None)  # Expiration time as timestamp
+    if exp_time_utcstamp:
+        return datetime.fromtimestamp(exp_time_utcstamp, tz=timezone.utc).strftime('%Y-%m-%d %H:%M:%S %Z')
+    return None
+
+
 @app.route('/register', methods=['POST'])
 def register_user():
     try:
@@ -282,23 +297,62 @@ def login():
     user = User.query.filter_by(email=email).first()
 
     if user and check_password_hash(user.password, password):
+        # Define the token expiration duration (e.g., 1 day)
+        token_duration = timedelta(minutes=10)
+
+        # Generate access token
+        access_token = create_access_token(identity=user.uid, expires_delta=token_duration)
+
+        # Convert the duration into a human-readable string
+        duration_in_seconds = int(token_duration.total_seconds())
+        duration_hours = duration_in_seconds // 3600
+        duration_minutes = (duration_in_seconds % 3600) // 60
+        duration_str = f"{duration_hours} hours, {duration_minutes} minutes"
+
         if user.is_farmer():
             farmer = Farmer.query.filter_by(user_id=user.uid).first()
+            access_token = create_access_token(identity=user.uid)  # Generate JWT token
+            exp_time_utc = datetime.now(timezone.utc) + token_duration
+            # Convert expiry time to IST
+            ist_offset = timedelta(hours=5, minutes=30)
+            exp_time_ist = exp_time_utc + ist_offset
+            print(f"Access token created: {access_token}, Expiration: {exp_time_ist}")
             return jsonify({
                 'message': 'Login successful',
                 'role': 'farmer',
-                'farmer_id': farmer.user_id if farmer else None
+                'farmer_id': farmer.user_id if farmer else None,
+                'access_token': access_token,
+                'token_duration': duration_str,
+                'expires_at': exp_time_ist.strftime('%Y-%m-%d %H:%M:%S %Z'),  # Return formatted expiration time
+                'exp_time': exp_time_ist
             })
         elif user.is_buyer():
             buyer = Buyer.query.filter_by(user_id=user.uid).first()
+            access_token = create_access_token(identity=user.uid)  # Generate JWT token
+            exp_time_utc = datetime.now(timezone.utc) + token_duration
+            print(f"Access token created: {access_token}, Expiration: {exp_time_utc}")
             return jsonify({
                 'message': 'Login successful',
                 'role': 'buyer',
-                'buyer_id': buyer.user_id if buyer else None
+                'buyer_id': buyer.user_id if buyer else None,
+                'access_token': access_token,
+                'token_duration': duration_str,
+                'expires_at': exp_time_utc.strftime('%Y-%m-%d %H:%M:%S %Z')  # Return formatted expiration time
             })
         else:
             return jsonify({'message': 'Unknown role'}), 400
     return jsonify({'message': 'Invalid email or password'}), 401
+
+
+@app.route('/protected', methods=['GET'])
+@jwt_required()
+def protected():
+    try:
+        # If the token is valid and not expired, this endpoint will work
+        return jsonify({"message": "Token is valid and not expired"}), 200
+    except Exception as e:
+        # If the token is expired or invalid, return the error
+        return jsonify({"message": str(e)}), 401
 
 
 app.route('/farmers', methods=['POST'])
