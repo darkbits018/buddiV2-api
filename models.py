@@ -41,7 +41,7 @@ class Buyer(db.Model):
 class Item(db.Model):
     __tablename__ = 'items'
     item_id = db.Column(db.Integer, primary_key=True)
-    farmer_id = db.Column(db.Integer, db.ForeignKey('farmers.farmer_id'), nullable=False)
+    farmer_id = db.Column(db.String(50), db.ForeignKey('farmers.user_id'), nullable=False)  # Change to VARCHAR
     item_name = db.Column(db.String(255), nullable=False)
     description = db.Column(db.Text)
     quantity = db.Column(db.Integer, default=0)

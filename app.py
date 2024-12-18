@@ -298,10 +298,11 @@ def login():
 
     if user and check_password_hash(user.password, password):
         # Define the token expiration duration (e.g., 1 day)
-        token_duration = timedelta(minutes=10)
+        token_duration = timedelta(days=1)
 
         # Generate access token
-        access_token = create_access_token(identity=user.uid, expires_delta=token_duration)
+        access_token = create_access_token(identity=user.uid,
+                                           expires_delta=token_duration)
 
         # Convert the duration into a human-readable string
         duration_in_seconds = int(token_duration.total_seconds())
@@ -311,7 +312,8 @@ def login():
 
         if user.is_farmer():
             farmer = Farmer.query.filter_by(user_id=user.uid).first()
-            access_token = create_access_token(identity=user.uid)  # Generate JWT token
+            access_token = create_access_token(
+                identity=user.uid)  # Generate JWT token
             exp_time_utc = datetime.now(timezone.utc) + token_duration
             # Convert expiry time to IST
             ist_offset = timedelta(hours=5, minutes=30)
@@ -328,8 +330,12 @@ def login():
             })
         elif user.is_buyer():
             buyer = Buyer.query.filter_by(user_id=user.uid).first()
-            access_token = create_access_token(identity=user.uid)  # Generate JWT token
+            access_token = create_access_token(
+                identity=user.uid)  # Generate JWT token
             exp_time_utc = datetime.now(timezone.utc) + token_duration
+            # Convert expiry time to IST
+            ist_offset = timedelta(hours=5, minutes=30)
+            exp_time_ist = exp_time_utc + ist_offset
             print(f"Access token created: {access_token}, Expiration: {exp_time_utc}")
             return jsonify({
                 'message': 'Login successful',
@@ -337,11 +343,72 @@ def login():
                 'buyer_id': buyer.user_id if buyer else None,
                 'access_token': access_token,
                 'token_duration': duration_str,
-                'expires_at': exp_time_utc.strftime('%Y-%m-%d %H:%M:%S %Z')  # Return formatted expiration time
+                'expires_at': exp_time_ist.strftime('%Y-%m-%d %H:%M:%S %Z'),  # Return formatted expiration time
+                'exp_time': exp_time_ist
             })
         else:
             return jsonify({'message': 'Unknown role'}), 400
     return jsonify({'message': 'Invalid email or password'}), 401
+
+
+# @app.route('/login', methods=['POST'])
+# def login():
+#     data = request.get_json()
+#     email = data.get('email')
+#     password = data.get('password')
+#
+#     # Query the User model for the email
+#     user = User.query.filter_by(email=email).first()
+#
+#     if user and check_password_hash(user.password, password):
+#         # Define the token expiration duration (e.g., 1 day)
+#         token_duration = timedelta(days=1)
+#
+#         # Generate access token
+#         access_token = create_access_token(
+#             identity={"user_id": str(user.uid), "role": user.role},  # Include both user_id and role
+#             expires_delta=token_duration
+#         )
+#
+#         # Convert the duration into a human-readable string
+#         duration_in_seconds = int(token_duration.total_seconds())
+#         duration_hours = duration_in_seconds // 3600
+#         duration_minutes = (duration_in_seconds % 3600) // 60
+#         duration_str = f"{duration_hours} hours, {duration_minutes} minutes"
+#
+#         if user.is_farmer():
+#             farmer = Farmer.query.filter_by(user_id=user.uid).first()
+#             exp_time_utc = datetime.now(timezone.utc) + token_duration
+#             ist_offset = timedelta(hours=5, minutes=30)
+#             exp_time_ist = exp_time_utc + ist_offset
+#             print(f"Access token created: {access_token}, Expiration: {exp_time_ist}")
+#             return jsonify({
+#                 'message': 'Login successful',
+#                 'role': 'farmer',
+#                 'farmer_id': farmer.user_id if farmer else None,
+#                 'access_token': access_token,
+#                 'token_duration': duration_str,
+#                 'expires_at': exp_time_ist.strftime('%Y-%m-%d %H:%M:%S %Z'),
+#                 'exp_time': exp_time_ist
+#             })
+#         elif user.is_buyer():
+#             buyer = Buyer.query.filter_by(user_id=user.uid).first()
+#             exp_time_utc = datetime.now(timezone.utc) + token_duration
+#             ist_offset = timedelta(hours=5, minutes=30)
+#             exp_time_ist = exp_time_utc + ist_offset
+#             print(f"Access token created: {access_token}, Expiration: {exp_time_ist}")
+#             return jsonify({
+#                 'message': 'Login successful',
+#                 'role': 'buyer',
+#                 'buyer_id': buyer.user_id if buyer else None,
+#                 'access_token': access_token,
+#                 'token_duration': duration_str,
+#                 'expires_at': exp_time_ist.strftime('%Y-%m-%d %H:%M:%S %Z'),
+#                 'exp_time': exp_time_ist
+#             })
+#         else:
+#             return jsonify({'message': 'Unknown role'}), 400
+#     return jsonify({'message': 'Invalid email or password'}), 401
 
 
 @app.route('/protected', methods=['GET'])
@@ -349,6 +416,9 @@ def login():
 def protected():
     try:
         # If the token is valid and not expired, this endpoint will work
+        current_user_role = get_jwt_identity()
+        current_user = get_jwt_identity()  # Extract user_id and role
+        print(f"Current JWT Identity: {current_user} {current_user_role}")  # Optional, for debugging
         return jsonify({"message": "Token is valid and not expired"}), 200
     except Exception as e:
         # If the token is expired or invalid, return the error
@@ -367,22 +437,46 @@ def create_farmer():
 
 
 @app.route('/items', methods=['POST'])
+@jwt_required()
 def add_item():
+    user = get_jwt_identity()  # Get the user ID from the token
     data = request.get_json()
-    item = Item(farmer_id=data['farmer_id'], item_name=data['item_name'], description=data.get('description', ''),
-                quantity=data['quantity'], price=data['price'])
+
+    # Ensure the user is a farmer
+    farmer = Farmer.query.filter_by(user_id=user).first()
+    if not farmer:
+        return jsonify({'message': 'Unauthorized access'}), 403
+
+    # Add the item
+    item = Item(
+        farmer_id=farmer.user_id,
+        item_name=data.get('item_name'),
+        description=data.get('description'),
+        quantity=data.get('quantity'),
+        price=data.get('price')
+    )
     db.session.add(item)
     db.session.commit()
-    return jsonify({"message": "Item added successfully", "item_id": item.item_id}), 201
+    return jsonify({'message': 'Item added successfully', 'item_id': item.id}), 201
+
+
+from flask_jwt_extended import jwt_required, get_jwt_identity
 
 
 @app.route('/items/<int:item_id>', methods=['GET'])
+@jwt_required()  # Ensure the request is authenticated
 def get_item(item_id):
+    current_user_id = get_jwt_identity()  # Get the current logged-in user's ID
+
     # Fetch item details from the database using item_id
     item = Item.query.filter_by(item_id=item_id).first()
 
     if item is None:
         return jsonify({"message": "Item not found."}), 404
+
+    # Check if the current logged-in user is the owner of the item
+    if item.farmer_id != current_user_id:
+        return jsonify({"message": "You do not have access to this item."}), 403
 
     item_data = {
         "item_name": item.item_name,
