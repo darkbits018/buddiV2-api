@@ -489,10 +489,16 @@ def get_item(item_id):
     return jsonify(item_data)
 
 
-@app.route('/items/farmer/<int:farmer_id>', methods=['GET'])
-def get_items_by_farmer(farmer_id):
-    # Fetch all items for a specific farmer
-    items = Item.query.filter_by(farmer_id=farmer_id).all()
+from flask_jwt_extended import get_jwt_identity, jwt_required
+
+
+@app.route('/items/farmer', methods=['GET'])
+@jwt_required()  # Ensure the request is authenticated
+def get_items_by_current_farmer():
+    current_user_id = get_jwt_identity()  # Get the current logged-in user's ID
+
+    # Fetch all items for the currently logged-in farmer
+    items = Item.query.filter_by(farmer_id=current_user_id).all()
 
     if not items:
         return jsonify({"message": "No items found for this farmer."}), 404
