@@ -27,7 +27,7 @@ from flask_cors import CORS  # Import CORS
 import uuid
 import matplotlib
 from flask_bcrypt import Bcrypt
-from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
+from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity, get_jwt
 from werkzeug.security import generate_password_hash, check_password_hash
 
 matplotlib.use('Agg')
@@ -597,9 +597,16 @@ def get_sale(sale_id):
     return jsonify(sale_data)
 
 
-@app.route('/sales/farmer/<int:farmer_id>', methods=['GET'])
+@app.route('/sales/farmer/<string:farmer_id>', methods=['GET'])
+@jwt_required()  # Protecting the route with JWT authentication
 def get_sales_by_farmer(farmer_id):
-    # Fetch all sales for a specific farmer (based on the farmer's items)
+    # Convert farmer_id to integer if necessary (in case of any validation logic)
+    # try:
+    #     farmer_id = int(farmer_id)  # If you are using integer IDs, convert to int.
+    # except ValueError:
+    #     return jsonify({"error": "Invalid farmer ID"}), 400
+
+    # Fetch all sales for a specific farmer
     sales = db.session.query(Sale).join(Item).filter(Item.farmer_id == farmer_id).all()
 
     if not sales:
