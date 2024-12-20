@@ -538,7 +538,6 @@ def record_sale():
     if not item:
         return jsonify({"message": "Item not found"}), 404
 
-
     # Check if the current farmer owns the item
     if item.farmer_id != current_farmer_id:
         return jsonify({"message": "You are not authorized to sell this item"}), 403
@@ -562,13 +561,30 @@ def record_sale():
 
 
 @app.route('/sales/<int:sale_id>', methods=['GET'])
+@jwt_required()
 def get_sale(sale_id):
+    current_user_id = get_jwt_identity()  # Get the currently authenticated user's ID
+
     # Fetch sale details from the database using sale_id
     sale = Sale.query.filter_by(sale_id=sale_id).first()
 
     if sale is None:
         return jsonify({"message": "Sale not found."}), 404
 
+    # Authorize based on user role and relationship to the sale
+    user = User.query.get(current_user_id)
+
+    if user.is_farmer():
+        # A farmer can only view sales related to their items
+        item = Item.query.get(sale.item_id)
+        if item.farmer_id != current_user_id:
+            return jsonify({"message": "Unauthorized to view this sale."}), 403
+    elif user.is_buyer():
+        # A buyer can only view sales they are part of
+        if sale.buyer_id != current_user_id:
+            return jsonify({"message": "Unauthorized to view this sale."}), 403
+
+    # Create the response data
     sale_data = {
         "sale_id": sale.sale_id,
         "item_id": sale.item_id,
