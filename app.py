@@ -516,14 +516,49 @@ def get_items_by_current_farmer():
     return jsonify(items_data)
 
 
+from flask_jwt_extended import get_jwt_identity, jwt_required
+
+
 @app.route('/sales', methods=['POST'])
+@jwt_required()
 def record_sale():
     data = request.get_json()
-    sale = Sale(item_id=data['item_id'], buyer_id=data['buyer_id'], quantity_sold=data['quantity_sold'],
-                sale_price=data['sale_price'])
+
+    # Get the logged-in farmer's ID from the JWT token
+    current_farmer_id = get_jwt_identity()
+
+    # Validate buyer_id exists in the buyers table
+    buyer = Buyer.query.filter_by(user_id=data['buyer_id']).first()
+    if not buyer:
+        return jsonify({"error": "Invalid buyer_id"}), 400
+
+    # Fetch the item details using item_id
+    item = Item.query.filter_by(item_id=data['item_id']).first()
+
+    if not item:
+        return jsonify({"message": "Item not found"}), 404
+
+
+    # Check if the current farmer owns the item
+    if item.farmer_id != current_farmer_id:
+        return jsonify({"message": "You are not authorized to sell this item"}), 403
+
+    # Create a new sale record
+    sale = Sale(
+        item_id=data['item_id'],
+        buyer_id=data['buyer_id'],
+        quantity_sold=data['quantity_sold'],
+        sale_price=data['sale_price'],
+        farmer_id=current_farmer_id  # Add the current farmer's ID
+    )
+
     db.session.add(sale)
     db.session.commit()
-    return jsonify({"message": "Sale recorded successfully", "sale_id": sale.sale_id}), 201
+
+    return jsonify({
+        "message": "Sale recorded successfully",
+        "sale_id": sale.sale_id
+    }), 201
 
 
 @app.route('/sales/<int:sale_id>', methods=['GET'])

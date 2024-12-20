@@ -24,7 +24,6 @@ class User(db.Model):
         return self.role == 'buyer'
 
 
-
 class Farmer(db.Model):
     __tablename__ = 'farmers'
     user_id = db.Column(db.Integer, db.ForeignKey('users.uid'), primary_key=True)
@@ -34,8 +33,6 @@ class Buyer(db.Model):
     __tablename__ = 'buyers'
     user_id = db.Column(db.Integer, db.ForeignKey('users.uid'), primary_key=True)
     # Other fields if any
-
-
 
 
 class Item(db.Model):
@@ -53,10 +50,16 @@ class Sale(db.Model):
     __tablename__ = 'sales'
     sale_id = db.Column(db.Integer, primary_key=True)
     item_id = db.Column(db.Integer, db.ForeignKey('items.item_id'), nullable=False)
-    buyer_id = db.Column(db.Integer, db.ForeignKey('buyers.buyer_id'))
+    buyer_id = db.Column(db.Integer, db.ForeignKey('users.uid'), nullable=False)  # Updated to reference users.uid
     quantity_sold = db.Column(db.Integer, nullable=False)
     sale_price = db.Column(db.Numeric(10, 2), nullable=False)
     sale_date = db.Column(db.DateTime, default=db.func.current_timestamp())
+    farmer_id = db.Column(db.String, db.ForeignKey('users.uid'), nullable=False)
+
+    # Relationships
+    buyer = db.relationship('User', backref='purchases', foreign_keys=[buyer_id])  # Add relationship for buyer
+    farmer = db.relationship('User', backref='sales', foreign_keys=[farmer_id])  # Existing relationship for farmer
+    item = db.relationship('Item', backref='sales')
 
 
 class Appointment(db.Model):
